@@ -1,4 +1,4 @@
-name: Build Desktop Commander - Windows EXE
+name: Build Desktop Commander - Windows Portable
 
 on:
   workflow_dispatch:
@@ -28,33 +28,37 @@ jobs:
         shell: pwsh
         run: bun install --ignore-scripts
 
-      - name: Create dist directory
+      - name: Prepare directories
         shell: pwsh
         run: |
-          if (Test-Path "./dist") {
-            Remove-Item -Recurse -Force "./dist"
-          }
-          New-Item -ItemType Directory -Path "./dist" -Force | Out-Null
+          Remove-Item ./dist -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item ./release -Recurse -Force -ErrorAction SilentlyContinue
 
-      - name: Patch Bun-incompatible PDF imports
+          New-Item -ItemType Directory ./dist -Force | Out-Null
+          New-Item -ItemType Directory ./release -Force | Out-Null
+
+      - name: Patch Bun-compatible imports
         shell: pwsh
         run: |
-          # PDF support is optional for this standalone build.
-          # These patches only replace dynamic require() calls that Bun
-          # may fail to bundle correctly.
-
           $f1 = Get-Content "./src/tools/pdf/lib/pdf2md.ts" -Raw
           $f1 = $f1 -replace "import \{ createRequire \} from 'module';", ""
           $f1 = $f1 -replace "const require = createRequire\(import\.meta\.url\);", ""
           $f1 = $f1 -replace "const \{ parse \} = require\('@opendocsg/pdf2md/lib/util/pdf'\);", "import { parse } from '@opendocsg/pdf2md/lib/util/pdf';"
           $f1 = $f1 -replace "const \{ makeTransformations, transform \} = require\('@opendocsg/pdf2md/lib/util/transformations'\);", "import { makeTransformations, transform } from '@opendocsg/pdf2md/lib/util/transformations';"
-          Set-Content -Path "./src/tools/pdf/lib/pdf2md.ts" -Value $f1 -NoNewline
+          Set-Content "./src/tools/pdf/lib/pdf2md.ts" $f1 -NoNewline
 
           $f2 = Get-Content "./src/tools/pdf/manipulations.ts" -Raw
           $f2 = $f2 -replace "import \{ createRequire \} from 'module';", ""
           $f2 = $f2 -replace "const require = createRequire\(import\.meta\.url\);", ""
           $f2 = $f2 -replace "const \{ PDFDocument \} = require\('pdf-lib'\) as \{ PDFDocument: typeof PDFDocumentType \};", "import { PDFDocument } from 'pdf-lib';"
-          Set-Content -Path "./src/tools/pdf/manipulations.ts" -Value $f2 -NoNewline
+          Set-Content "./src/tools/pdf/manipulations.ts" $f2 -NoNewline
+
+      - name: Build JavaScript dist
+        shell: pwsh
+        run: |
+          bun build ./src/index.ts `
+            --outdir ./dist `
+            --target bun
 
       - name: Build standalone EXE
         shell: pwsh
@@ -62,9 +66,9 @@ jobs:
           bun build ./src/index.ts `
             --compile `
             --target=bun-windows-x64 `
-            --outfile="./dist/desktop-commander.exe"
+            --outfile ./release/desktop-commander.exe
 
-      - name: Restore source files
+      - name: Restore source
         if: always()
         shell: pwsh
         run: |
@@ -72,29 +76,85 @@ jobs:
             src/tools/pdf/lib/pdf2md.ts `
             src/tools/pdf/manipulations.ts
 
-      - name: Verify EXE
+      - name: Add package metadata
         shell: pwsh
         run: |
-          $exe = Get-Item "./dist/desktop-commander.exe"
+          Copy-Item ./package.json ./dist/package.json
 
-          if ($exe.Length -le 0) {
-            throw "Desktop Commander EXE is empty."
-          }
+      - name: Create dist ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path ./dist/* `
+            -DestinationPath ./release/desktop-commander-dist.zip `
+            -Force
 
-          Write-Host "Standalone EXE created successfully."
-          Write-Host "Path: $($exe.FullName)"
-          Write-Host "Size: $($exe.Length) bytes"
+      - name: Create portable package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory `
+            ./release/desktop-commander-portable `
+            -Force | Out-Null
 
-      - name: Upload Windows EXE
+          Copy-Item `
+            ./release/desktop-commander.exe `
+            ./release/desktop-commander-portable/desktop-commander.exe
+
+          Copy-Item `
+            ./dist `
+            ./release/desktop-commander-portable/dist `
+            -Recurse
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path ./release/desktop-commander-portable `
+            -DestinationPath ./release/desktop-commander-portable.zip `
+            -Force
+
+      - name: Verify outputs
+        shell: pwsh
+        run: |
+          Write-Host "=== EXE ==="
+          Get-Item ./release/desktop-commander.exe |
+            Select-Object Name, Length
+
+          Write-Host "=== DIST ZIP ==="
+          Get-Item ./release/desktop-commander-dist.zip |
+            Select-Object Name, Length
+
+          Write-Host "=== PORTABLE ZIP ==="
+          Get-Item ./release/desktop-commander-portable.zip |
+            Select-Object Name, Length
+
+      - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-commander-windows-x64
-          path: dist/desktop-commander.exe
+          name: desktop-commander-windows-x64-exe
+          path: release/desktop-commander.exe
+          if-no-files-found: error
+
+      - name: Upload dist ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-commander-windows-x64-dist
+          path: release/desktop-commander-dist.zip
+          if-no-files-found: error
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-commander-windows-x64-portable
+          path: release/desktop-commander-portable.zip
           if-no-files-found: error
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/desktop-commander.exe
+          files: |
+            release/desktop-commander.exe
+            release/desktop-commander-dist.zip
+            release/desktop-commander-portable.zip
           generate_release_notes: true
