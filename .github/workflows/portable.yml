@@ -22,61 +22,75 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "canary"
+          bun-version: "1.4.2"
 
       - name: Install dependencies
         shell: pwsh
         run: bun install --ignore-scripts
 
-      - name: Build TypeScript
-        shell: pwsh
-        run: bun run build
-
-      - name: Clean dist
-        shell: pwsh
-        run: Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
-
       - name: Create dist directory
         shell: pwsh
-        run: New-Item -ItemType Directory -Path dist -Force
+        run: |
+          if (Test-Path "./dist") {
+            Remove-Item -Recurse -Force "./dist"
+          }
+          New-Item -ItemType Directory -Path "./dist" -Force | Out-Null
 
-      - name: Patch createRequire to static imports
+      - name: Patch Bun-incompatible PDF imports
         shell: pwsh
         run: |
-          # Patch pdf2md.ts — remove createRequire, use static imports
-          $f1 = Get-Content ./src/tools/pdf/lib/pdf2md.ts -Raw
+          # PDF support is optional for this standalone build.
+          # These patches only replace dynamic require() calls that Bun
+          # may fail to bundle correctly.
+
+          $f1 = Get-Content "./src/tools/pdf/lib/pdf2md.ts" -Raw
           $f1 = $f1 -replace "import \{ createRequire \} from 'module';", ""
           $f1 = $f1 -replace "const require = createRequire\(import\.meta\.url\);", ""
           $f1 = $f1 -replace "const \{ parse \} = require\('@opendocsg/pdf2md/lib/util/pdf'\);", "import { parse } from '@opendocsg/pdf2md/lib/util/pdf';"
           $f1 = $f1 -replace "const \{ makeTransformations, transform \} = require\('@opendocsg/pdf2md/lib/util/transformations'\);", "import { makeTransformations, transform } from '@opendocsg/pdf2md/lib/util/transformations';"
-          Set-Content -Path ./src/tools/pdf/lib/pdf2md.ts -Value $f1 -NoNewline
+          Set-Content -Path "./src/tools/pdf/lib/pdf2md.ts" -Value $f1 -NoNewline
 
-          # Patch manipulations.ts — remove createRequire, use static import
-          $f2 = Get-Content ./src/tools/pdf/manipulations.ts -Raw
+          $f2 = Get-Content "./src/tools/pdf/manipulations.ts" -Raw
           $f2 = $f2 -replace "import \{ createRequire \} from 'module';", ""
           $f2 = $f2 -replace "const require = createRequire\(import\.meta\.url\);", ""
           $f2 = $f2 -replace "const \{ PDFDocument \} = require\('pdf-lib'\) as \{ PDFDocument: typeof PDFDocumentType \};", "import { PDFDocument } from 'pdf-lib';"
-          Set-Content -Path ./src/tools/pdf/manipulations.ts -Value $f2 -NoNewline
+          Set-Content -Path "./src/tools/pdf/manipulations.ts" -Value $f2 -NoNewline
 
       - name: Build standalone EXE
         shell: pwsh
-        run: bun build ./src/index.ts --compile --target=bun-windows-x64 --outfile ./dist/desktop-commander.exe
+        run: |
+          bun build ./src/index.ts `
+            --compile `
+            --target=bun-windows-x64 `
+            --outfile="./dist/desktop-commander.exe"
 
-      - name: Restore original files
-        shell: pwsh
-        run: git checkout -- src/tools/pdf/lib/pdf2md.ts src/tools/pdf/manipulations.ts
-
-      - name: Verify output
+      - name: Restore source files
+        if: always()
         shell: pwsh
         run: |
-          $e = Get-Item ./dist/desktop-commander.exe
-          Write-Host "EXE: $($e.FullName) ($($e.Length) bytes)"
+          git checkout -- `
+            src/tools/pdf/lib/pdf2md.ts `
+            src/tools/pdf/manipulations.ts
+
+      - name: Verify EXE
+        shell: pwsh
+        run: |
+          $exe = Get-Item "./dist/desktop-commander.exe"
+
+          if ($exe.Length -le 0) {
+            throw "Desktop Commander EXE is empty."
+          }
+
+          Write-Host "Standalone EXE created successfully."
+          Write-Host "Path: $($exe.FullName)"
+          Write-Host "Size: $($exe.Length) bytes"
 
       - name: Upload Windows EXE
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: desktop-commander-windows-x64
           path: dist/desktop-commander.exe
+          if-no-files-found: error
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
