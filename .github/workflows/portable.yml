@@ -22,11 +22,11 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "latest"
+          bun-version: "1.4.2"
 
       - name: Install dependencies
         shell: pwsh
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Build standalone EXE
         shell: pwsh
@@ -41,15 +41,21 @@ jobs:
       - name: Verify EXE exists
         shell: pwsh
         run: |
-          if (!(Test-Path "./dist/desktop-commander.exe")) {
+          $exe = "./dist/desktop-commander.exe"
+
+          if (!(Test-Path $exe)) {
             Write-Error "Standalone EXE was not created."
             exit 1
           }
 
-          Get-Item "./dist/desktop-commander.exe" |
-            Select-Object Name, Length, FullName
+          $file = Get-Item $exe
 
-      - name: Upload EXE artifact
+          Write-Host "EXE created successfully:"
+          Write-Host "Name: $($file.Name)"
+          Write-Host "Size: $($file.Length) bytes"
+          Write-Host "Path: $($file.FullName)"
+
+      - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
           name: desktop-commander-windows-x64
