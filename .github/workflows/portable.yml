@@ -27,7 +27,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 'canary'
+          bun-version: "canary"
 
       - name: Install dependencies
         shell: pwsh
@@ -37,52 +37,40 @@ jobs:
         shell: pwsh
         run: bun run build
 
-      - name: Bundle to JS
+      - name: Build dist (bundled JS, no --compile)
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
           bun build ./src/index.ts `
             --target=bun-windows-x64 `
-            --outfile ./dist/bundle.js
-
-      - name: Copy createRequire modules into dist
-        shell: pwsh
-        run: |
-          $modules = @(
-            '@opendocsg/pdf2md/lib/util/pdf.js',
-            '@opendocsg/pdf2md/lib/util/transformations.js'
-          )
-          foreach ($mod in $modules) {
-            $src = node -e "try { console.log(require.resolve('$mod')) } catch(e) {}"
-            if ($src) {
-              $destDir = Join-Path dist (Split-Path $src -Leaf | Split-Path)
-              New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-              Copy-Item $src -Destination $destDir -Force
-            }
-          }
+            --outfile ./dist/desktop-commander.js
 
       - name: Build standalone EXE
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
           bun build ./src/index.ts `
             --compile `
             --target=bun-windows-x64 `
             --outfile ./dist/desktop-commander.exe
 
-      - name: Verify EXE exists
+      - name: Verify outputs exist
         shell: pwsh
         run: |
           $exe = "./dist/desktop-commander.exe"
+          $js  = "./dist/desktop-commander.js"
           if (!(Test-Path $exe)) {
             Write-Error "Standalone EXE was not created."
             exit 1
           }
+          if (!(Test-Path $js)) {
+            Write-Error "Bundled JS was not created."
+            exit 1
+          }
           $file = Get-Item $exe
-          Write-Host "EXE created successfully:"
-          Write-Host "Name: $($file.Name)"
-          Write-Host "Size: $($file.Length) bytes"
-          Write-Host "Path: $($file.FullName)"
+          Write-Host "Build successful:"
+          Write-Host "EXE: $($file.FullName) ($($file.Length) bytes)"
+          Write-Host "JS:  $js"
 
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v7
