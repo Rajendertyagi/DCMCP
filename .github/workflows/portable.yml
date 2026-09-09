@@ -47,7 +47,7 @@ jobs:
 
       - name: Build bundled JS to dist
         shell: pwsh
-        run: bun build ./src/index.ts --target=bun-windows-x64 --outfile ./dist/desktop-commander.js
+        run: bun build ./src/index.ts --target=node --outfile ./dist/desktop-commander.js
 
       - name: Build standalone EXE
         shell: pwsh
