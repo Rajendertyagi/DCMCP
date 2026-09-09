@@ -1,0 +1,159 @@
+name: Build Desktop Commander - Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: bun install --ignore-scripts
+
+      - name: Prepare output folders
+        shell: pwsh
+        run: |
+          if (Test-Path "./dist") {
+            Remove-Item -Recurse -Force "./dist"
+          }
+
+          if (Test-Path "./release") {
+            Remove-Item -Recurse -Force "./release"
+          }
+
+          New-Item -ItemType Directory -Path "./dist" -Force | Out-Null
+          New-Item -ItemType Directory -Path "./release" -Force | Out-Null
+
+      - name: Patch Bun-incompatible PDF imports
+        shell: pwsh
+        run: |
+          $f1 = Get-Content "./src/tools/pdf/lib/pdf2md.ts" -Raw
+
+          $f1 = $f1 -replace "import \{ createRequire \} from 'module';", ""
+          $f1 = $f1 -replace "const require = createRequire\(import\.meta\.url\);", ""
+          $f1 = $f1 -replace "const \{ parse \} = require\('@opendocsg/pdf2md/lib/util/pdf'\);", "import { parse } from '@opendocsg/pdf2md/lib/util/pdf';"
+          $f1 = $f1 -replace "const \{ makeTransformations, transform \} = require\('@opendocsg/pdf2md/lib/util/transformations'\);", "import { makeTransformations, transform } from '@opendocsg/pdf2md/lib/util/transformations';"
+
+          Set-Content "./src/tools/pdf/lib/pdf2md.ts" $f1 -NoNewline
+
+          $f2 = Get-Content "./src/tools/pdf/manipulations.ts" -Raw
+
+          $f2 = $f2 -replace "import \{ createRequire \} from 'module';", ""
+          $f2 = $f2 -replace "const require = createRequire\(import\.meta\.url\);", ""
+          $f2 = $f2 -replace "const \{ PDFDocument \} = require\('pdf-lib'\) as \{ PDFDocument: typeof PDFDocumentType \};", "import { PDFDocument } from 'pdf-lib';"
+
+          Set-Content "./src/tools/pdf/manipulations.ts" $f2 -NoNewline
+
+      - name: Build JavaScript dist
+        shell: pwsh
+        run: |
+          bun build ./src/index.ts `
+            --outdir="./dist" `
+            --target=bun
+
+      - name: Build standalone EXE
+        shell: pwsh
+        run: |
+          bun build ./src/index.ts `
+            --compile `
+            --target=bun-windows-x64 `
+            --outfile="./release/desktop-commander.exe"
+
+      - name: Restore source files
+        if: always()
+        shell: pwsh
+        run: |
+          git checkout -- `
+            src/tools/pdf/lib/pdf2md.ts `
+            src/tools/pdf/manipulations.ts
+
+      - name: Prepare dist package
+        shell: pwsh
+        run: |
+          Copy-Item "./package.json" "./dist/package.json"
+
+      - name: Create combined release folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "./release/desktop-commander" -Force | Out-Null
+
+          Copy-Item "./release/desktop-commander.exe" `
+            "./release/desktop-commander/desktop-commander.exe"
+
+          Copy-Item "./dist" `
+            "./release/desktop-commander/dist" `
+            -Recurse
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "./release/desktop-commander" `
+            -DestinationPath "./release/desktop-commander-windows-x64.zip" `
+            -Force
+
+      - name: Verify outputs
+        shell: pwsh
+        run: |
+          Write-Host ""
+          Write-Host "=== EXE ==="
+          Get-Item "./release/desktop-commander/desktop-commander.exe" |
+            Select-Object Name, Length, FullName
+
+          Write-Host ""
+          Write-Host "=== DIST ==="
+          Get-ChildItem "./release/desktop-commander/dist" -Recurse |
+            Select-Object FullName, Length
+
+          Write-Host ""
+          Write-Host "=== ZIP ==="
+          Get-Item "./release/desktop-commander-windows-x64.zip" |
+            Select-Object Name, Length, FullName
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-commander-windows-x64-exe
+          path: release/desktop-commander/desktop-commander.exe
+          if-no-files-found: error
+
+      - name: Upload dist folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-commander-windows-x64-dist
+          path: release/desktop-commander/dist
+          if-no-files-found: error
+
+      - name: Upload combined ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-commander-windows-x64
+          path: release/desktop-commander-windows-x64.zip
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            release/desktop-commander-windows-x64.zip
+            release/desktop-commander/desktop-commander.exe
+          generate_release_notes: true
