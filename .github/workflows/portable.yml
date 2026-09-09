@@ -22,7 +22,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.2"
+          bun-version: "canary"
 
       - name: Install dependencies
         shell: pwsh
@@ -32,7 +32,6 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-
           bun build ./src/index.ts `
             --compile `
             --target=bun-windows-x64 `
@@ -42,14 +41,11 @@ jobs:
         shell: pwsh
         run: |
           $exe = "./dist/desktop-commander.exe"
-
           if (!(Test-Path $exe)) {
             Write-Error "Standalone EXE was not created."
             exit 1
           }
-
           $file = Get-Item $exe
-
           Write-Host "EXE created successfully:"
           Write-Host "Name: $($file.Name)"
           Write-Host "Size: $($file.Length) bytes"
