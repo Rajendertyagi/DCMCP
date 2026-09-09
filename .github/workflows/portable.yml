@@ -47,29 +47,20 @@ jobs:
 
       - name: Build bundled JS to dist
         shell: pwsh
-        run: |
-          bun build ./src/index.ts `
-            --target=bun-windows-x64 `
-            --outfile ./dist/desktop-commander.js
+        run: bun build ./src/index.ts --target=bun-windows-x64 --outfile ./dist/desktop-commander.js
 
       - name: Build standalone EXE
         shell: pwsh
-        run: |
-          bun build ./src/index.ts `
-            --compile `
-            --target=bun-windows-x64 `
-            --outfile ./dist/desktop-commander.exe
+        run: bun build ./src/index.ts --compile --target=bun-windows-x64 --outfile ./dist/desktop-commander.exe
 
       - name: Verify outputs
         shell: pwsh
         run: |
-          $exe = "./dist/desktop-commander.exe"
-          $js  = "./dist/desktop-commander.js"
-          if (!(Test-Path $exe)) { Write-Error "EXE not created"; exit 1 }
-          if (!(Test-Path $js))  { Write-Error "JS not created"; exit 1 }
-          $e = Get-Item $exe
+          if (!(Test-Path "./dist/desktop-commander.exe")) { Write-Error "EXE not created"; exit 1 }
+          if (!(Test-Path "./dist/desktop-commander.js"))  { Write-Error "JS not created"; exit 1 }
+          $e = Get-Item "./dist/desktop-commander.exe"
           Write-Host "EXE: $($e.FullName) ($($e.Length) bytes)"
-          Write-Host "JS:  $js"
+          Write-Host "JS:  ./dist/desktop-commander.js"
 
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v7
