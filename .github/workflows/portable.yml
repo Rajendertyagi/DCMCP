@@ -40,10 +40,10 @@ jobs:
         shell: pwsh
         run: New-Item -ItemType Directory -Path dist -Force
 
-      - name: Patch createRequire calls to static imports
+      - name: Patch createRequire to static imports
         shell: pwsh
         run: |
-          # Patch pdf2md.ts
+          # Patch pdf2md.ts — remove createRequire, use static imports
           $f1 = Get-Content ./src/tools/pdf/lib/pdf2md.ts -Raw
           $f1 = $f1 -replace "import \{ createRequire \} from 'module';", ""
           $f1 = $f1 -replace "const require = createRequire\(import\.meta\.url\);", ""
@@ -51,7 +51,7 @@ jobs:
           $f1 = $f1 -replace "const \{ makeTransformations, transform \} = require\('@opendocsg/pdf2md/lib/util/transformations'\);", "import { makeTransformations, transform } from '@opendocsg/pdf2md/lib/util/transformations';"
           Set-Content -Path ./src/tools/pdf/lib/pdf2md.ts -Value $f1 -NoNewline
 
-          # Patch manipulations.ts
+          # Patch manipulations.ts — remove createRequire, use static import
           $f2 = Get-Content ./src/tools/pdf/manipulations.ts -Raw
           $f2 = $f2 -replace "import \{ createRequire \} from 'module';", ""
           $f2 = $f2 -replace "const require = createRequire\(import\.meta\.url\);", ""
