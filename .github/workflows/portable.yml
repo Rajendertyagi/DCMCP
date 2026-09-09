@@ -27,7 +27,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "canary"
+          bun-version: 'canary'
 
       - name: Install dependencies
         shell: pwsh
@@ -36,6 +36,30 @@ jobs:
       - name: Build TypeScript
         shell: pwsh
         run: bun run build
+
+      - name: Bundle to JS
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          bun build ./src/index.ts `
+            --target=bun-windows-x64 `
+            --outfile ./dist/bundle.js
+
+      - name: Copy createRequire modules into dist
+        shell: pwsh
+        run: |
+          $modules = @(
+            '@opendocsg/pdf2md/lib/util/pdf.js',
+            '@opendocsg/pdf2md/lib/util/transformations.js'
+          )
+          foreach ($mod in $modules) {
+            $src = node -e "try { console.log(require.resolve('$mod')) } catch(e) {}"
+            if ($src) {
+              $destDir = Join-Path dist (Split-Path $src -Leaf | Split-Path)
+              New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+              Copy-Item $src -Destination $destDir -Force
+            }
+          }
 
       - name: Build standalone EXE
         shell: pwsh
